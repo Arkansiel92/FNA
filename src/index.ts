@@ -1,24 +1,8 @@
 import * as puppeteer from "puppeteer";
 import * as fs from 'fs';
-
-interface data {
-    min: number
-    amount: string | null
-    cities: string[]
-    options: string[]
-}
-
-interface result {
-    city: string | null,
-    price: string | null,
-    link: string | null,
-    parts: string | null,
-    size: string | null,
-    rooms: string | null
-}
+import { data, filters, result } from "./types";
 
 const data: data = {
-    min: 800,
     amount: '1000',
     cities : [
         'Colombes', 
@@ -27,11 +11,18 @@ const data: data = {
         'Franconville 95130',
         'Ermont',
         'Eaubonne',
-        'Montigny-Les-Cormeilles'
+        'Montigny-Les-Cormeilles',
+        'Courbevoie'
     ],
     options: [
         'appartement'
     ]
+}
+
+const filters: filters = {
+    sizeMin: 30,
+    partsMin: 0,
+    roomsMin: 1
 }
 
 function timeout(ms: number): Promise<void> {
@@ -65,13 +56,13 @@ async function CheckOffer(offer: puppeteer.ElementHandle<Element>) {
         city: null,
         price: null,
         link: null,
-        parts: null,
-        size: null,
-        rooms: null
+        parts: 0,
+        size: 0,
+        rooms: 0
     }
 
     result.city = await offer.$eval('a > .h1', span => span.textContent);
-    if(result.city) result.city.replace(/\u000A|\u0009/g, '');
+    if(result.city) result.city.replace(/[\n\r\t]/g, '');
 
     result.price = await offer.$eval('a > .item-price', span => span.textContent);
     result.link = await offer.$eval('a', a => a.href);
@@ -82,23 +73,28 @@ async function CheckOffer(offer: puppeteer.ElementHandle<Element>) {
         const t = await tag.evaluate(li => li.textContent);
 
         if(t) {
+            let split = t.split(' ');
             if (t.includes('pièce') || t.includes('pièces')) {
-                result.parts = t;
+                result.parts = Number(split[0]);
             } else if (t.includes('m2')) {
-                result.size = t;
+                result.size = Number(split[0]);
             } else if (t.includes('chambre') || t.includes('chambres')) {
-                result.rooms = t;
+                result.rooms = Number(split[0]);
             }
         }
     }
+    
+    if(result.parts >= filters.partsMin && result.size >= filters.sizeMin && result.rooms >= filters.roomsMin) {
+        return await saveInFile(result);
+    }
 
-    return await saveInFile(result);
+    return console.log('❌ L\'offre ne corresponds pas aux critères');
 }
 
 async function saveInFile(result: result) {
     
     if(result) {
-        const str = `${result.city} | ${result.price} | ${result.parts} | ${result.size} | ${result.link} | ${result.rooms ?? result.rooms}`;
+        const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${result.rooms ?? result.rooms + ' chambre(s)'}`;
 
         fs.appendFile("offers.txt", str, (err) => {
             if(err) console.log('Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
@@ -108,6 +104,18 @@ async function saveInFile(result: result) {
     } else {
         return false;
     }
+}
+
+async function scroll(page: Promise<puppeteer.Page>, index: number) {
+    console.log('\nChargements des offres...');
+    
+    for (let i = 0; i < index; i++) {
+        (await page).evaluate(() => {
+            window.scrollBy(0, window.innerHeight);
+        });  
+        await timeout(3000);
+        console.log('... ' + (i / index) * 100 + '%');
+    };
 }
 
 async function main(): Promise<void> {
@@ -125,7 +133,7 @@ async function main(): Promise<void> {
     await waitForButton(page, '.sd-cmp-3-lsB');
 
     // add cities to choice
-    console.log('\n Ville(s) recherchée(s) :');
+    console.log('\nVille(s) recherchée(s) :');
     for(const city of data.cities) {
         await waitForInput(page, '#token-input-geo_objets_ids', city);
         await timeout(1000);
@@ -133,7 +141,7 @@ async function main(): Promise<void> {
         console.log("✅", city);
     }
 
-    console.log('\n Bien(s) recherché(s) : ')
+    console.log('\nBien(s) recherché(s) : ')
     data.options.forEach(async opt => {
         console.log('✅', opt);
         (await page).select('#homepage_recherche_form > div > div.col-4-5 > div.row.margin-bottom-20 > div:nth-child(2) > div > div > select', opt)
@@ -147,13 +155,21 @@ async function main(): Promise<void> {
 
     await timeout(2000);
 
+    await scroll(page, 10);
+
     const offers = await (await page).$$('.item-body');
 
-    for(const offer of offers) {
-        await CheckOffer(offer);
+    console.log('\n✅ Offres trouvées :', offers.length);
+
+    if(offers) {
+        for(const offer of offers) {
+            await CheckOffer(offer);
+        }
+    } else {
+        console.log('❌ Aucune offre trouvée.');
+        await browser.close();
+        return;
     }
-
-
 }
 
 main();

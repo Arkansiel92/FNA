@@ -34,8 +34,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const puppeteer = __importStar(require("puppeteer"));
 const fs = __importStar(require("fs"));
+const { scrollPageToBottom } = require('puppeteer-autoscroll-down');
 const data = {
-    min: 800,
     amount: '1000',
     cities: [
         'Colombes',
@@ -44,11 +44,17 @@ const data = {
         'Franconville 95130',
         'Ermont',
         'Eaubonne',
-        'Montigny-Les-Cormeilles'
+        'Montigny-Les-Cormeilles',
+        'Courbevoie'
     ],
     options: [
         'appartement'
     ]
+};
+const filters = {
+    sizeMin: 30,
+    partsMin: 0,
+    roomsMin: 1
 };
 function timeout(ms) {
     return new Promise(res => {
@@ -81,38 +87,42 @@ function CheckOffer(offer) {
             city: null,
             price: null,
             link: null,
-            parts: null,
-            size: null,
-            rooms: null
+            parts: 0,
+            size: 0,
+            rooms: 0
         };
         result.city = yield offer.$eval('a > .h1', span => span.textContent);
         if (result.city)
-            result.city.replace(/\u000A|\u0009/g, '');
+            result.city.replace(/[\n\r\t]/g, '');
         result.price = yield offer.$eval('a > .item-price', span => span.textContent);
         result.link = yield offer.$eval('a', a => a.href);
         const tags = yield offer.$$('.item-tags > li');
         for (const tag of tags) {
             const t = yield tag.evaluate(li => li.textContent);
             if (t) {
+                let split = t.split(' ');
                 if (t.includes('pièce') || t.includes('pièces')) {
-                    result.parts = t;
+                    result.parts = Number(split[0]);
                 }
                 else if (t.includes('m2')) {
-                    result.size = t;
+                    result.size = Number(split[0]);
                 }
                 else if (t.includes('chambre') || t.includes('chambres')) {
-                    result.rooms = t;
+                    result.rooms = Number(split[0]);
                 }
             }
         }
-        return yield saveInFile(result);
+        if (result.parts >= filters.partsMin && result.size >= filters.sizeMin && result.rooms >= filters.roomsMin) {
+            return yield saveInFile(result);
+        }
+        return console.log('❌ L\'offre ne corresponds pas aux critères');
     });
 }
 function saveInFile(result) {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
         if (result) {
-            const str = `${result.city} | ${result.price} | ${result.parts} | ${result.size} | ${result.link} | ${(_a = result.rooms) !== null && _a !== void 0 ? _a : result.rooms}`;
+            const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${(_a = result.rooms) !== null && _a !== void 0 ? _a : result.rooms + ' chambre(s)'}`;
             fs.appendFile("offers.txt", str, (err) => {
                 if (err)
                     console.log('Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
@@ -123,6 +133,19 @@ function saveInFile(result) {
         else {
             return false;
         }
+    });
+}
+function scroll(page, index) {
+    return __awaiter(this, void 0, void 0, function* () {
+        console.log('\nChargements des offres...');
+        for (let i = 0; i < index; i++) {
+            (yield page).evaluate(() => {
+                window.scrollBy(0, window.innerHeight);
+            });
+            yield timeout(3000);
+            console.log('... ' + (i / index) * 100 + '%');
+        }
+        ;
     });
 }
 function main() {
@@ -137,14 +160,14 @@ function main() {
         // skip cookies
         yield waitForButton(page, '.sd-cmp-3-lsB');
         // add cities to choice
-        console.log('\n Ville(s) recherchée(s) :');
+        console.log('\nVille(s) recherchée(s) :');
         for (const city of data.cities) {
             yield waitForInput(page, '#token-input-geo_objets_ids', city);
             yield timeout(1000);
             yield pressKeyboard(page, 'Enter');
             console.log("✅", city);
         }
-        console.log('\n Bien(s) recherché(s) : ');
+        console.log('\nBien(s) recherché(s) : ');
         data.options.forEach((opt) => __awaiter(this, void 0, void 0, function* () {
             console.log('✅', opt);
             (yield page).select('#homepage_recherche_form > div > div.col-4-5 > div.row.margin-bottom-20 > div:nth-child(2) > div > div > select', opt);
@@ -155,9 +178,18 @@ function main() {
         yield waitForButton(page, '#homepage_recherche_form > div > div.col-1-5.align-right > div.no-margin-bottom > a');
         yield waitForButton(page, '#submit-sans-creer-alerte');
         yield timeout(2000);
+        yield scroll(page, 10);
         const offers = yield (yield page).$$('.item-body');
-        for (const offer of offers) {
-            yield CheckOffer(offer);
+        console.log('\n✅ Offres trouvées :', offers.length);
+        if (offers) {
+            for (const offer of offers) {
+                yield CheckOffer(offer);
+            }
+        }
+        else {
+            console.log('❌ Aucune offre trouvée.');
+            yield browser.close();
+            return;
         }
     });
 }
