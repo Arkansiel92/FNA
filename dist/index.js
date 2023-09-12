@@ -34,7 +34,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const puppeteer = __importStar(require("puppeteer"));
 const fs = __importStar(require("fs"));
-const { scrollPageToBottom } = require('puppeteer-autoscroll-down');
 const data = {
     amount: '1000',
     cities: [
@@ -92,8 +91,16 @@ function CheckOffer(offer) {
             rooms: 0
         };
         result.city = yield offer.$eval('a > .h1', span => span.textContent);
-        if (result.city)
-            result.city.replace(/[\n\r\t]/g, '');
+        if (result.city) {
+            let str = result.city.split(' ');
+            if (str[0] === "Paris") {
+                result.city = `${str[0]} ${str[1]}`;
+            }
+            else {
+                result.city = str[0];
+            }
+        }
+        ;
         result.price = yield offer.$eval('a > .item-price', span => span.textContent);
         result.link = yield offer.$eval('a', a => a.href);
         const tags = yield offer.$$('.item-tags > li');
@@ -115,23 +122,19 @@ function CheckOffer(offer) {
         if (result.parts >= filters.partsMin && result.size >= filters.sizeMin && result.rooms >= filters.roomsMin) {
             return yield saveInFile(result);
         }
-        return console.log('❌ L\'offre ne corresponds pas aux critères');
+        return console.log(`❌ ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.rooms} chambre(s)`);
     });
 }
 function saveInFile(result) {
-    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         if (result) {
-            const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${(_a = result.rooms) !== null && _a !== void 0 ? _a : result.rooms + ' chambre(s)'}`;
+            const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${result.rooms} chambre(s)`;
             fs.appendFile("offers.txt", str, (err) => {
                 if (err)
-                    console.log('Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
+                    console.log('❌ Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
                 else
-                    console.log('✅ L\'offre a été enregistrée');
+                    console.log(`✅ ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.rooms} chambre(s)`);
             });
-        }
-        else {
-            return false;
         }
     });
 }

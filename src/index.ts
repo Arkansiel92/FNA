@@ -62,7 +62,15 @@ async function CheckOffer(offer: puppeteer.ElementHandle<Element>) {
     }
 
     result.city = await offer.$eval('a > .h1', span => span.textContent);
-    if(result.city) result.city.replace(/[\n\r\t]/g, '');
+    if(result.city) {
+        let str = result.city.split(' ');
+
+        if(str[0] === "Paris") {
+            result.city = `${str[0]} ${str[1]}`;
+        } else {
+            result.city = str[0];
+        }
+    };
 
     result.price = await offer.$eval('a > .item-price', span => span.textContent);
     result.link = await offer.$eval('a', a => a.href);
@@ -88,21 +96,19 @@ async function CheckOffer(offer: puppeteer.ElementHandle<Element>) {
         return await saveInFile(result);
     }
 
-    return console.log('❌ L\'offre ne corresponds pas aux critères');
+    return console.log(`❌ ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.rooms} chambre(s)`);
 }
 
 async function saveInFile(result: result) {
     
     if(result) {
-        const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${result.rooms ?? result.rooms + ' chambre(s)'}`;
+        const str = `\n ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.link} | ${result.rooms} chambre(s)`;
 
         fs.appendFile("offers.txt", str, (err) => {
-            if(err) console.log('Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
+            if(err) console.log('❌ Une erreur est survenue, l\'offre n\'a pas été sauvegardé');
 
-            else console.log('✅ L\'offre a été enregistrée');
+            else console.log(`✅ ${result.city} | ${result.price} | ${result.parts} pièces | ${result.size} m2 | ${result.rooms} chambre(s)`);
         })
-    } else {
-        return false;
     }
 }
 
